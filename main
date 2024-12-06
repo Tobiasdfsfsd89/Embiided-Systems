@@ -1,0 +1,25 @@
+/*
+ *  ======== main_tirtos.c ========
+ */
+
+#include "class.h"
+
+extern void ti_ndk_config_Global_startupFxn();
+
+
+/*
+ *  ======== main ========
+ */
+int main(void)
+{
+    Board_init();
+
+    ti_ndk_config_Global_startupFxn();
+
+    Driver_init();
+
+    /* Start BIOS */
+    BIOS_start();
+
+    return (0);
+}
