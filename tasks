@@ -1,0 +1,68 @@
+/*
+ * tasks.c
+ *
+ * Author:Toby Erua
+ */
+
+#include "class.h"
+#include <stdio.h>
+
+
+
+
+
+void TSKPayload()
+{
+    int32_t payloadnext;
+    int32_t index;
+    uint32_t gateKey;
+    char *payload;
+
+    for(;;){
+        Semaphore_pend(Bios.PayloadSem, BIOS_WAIT_FOREVER);
+        index = PayloadQ.payloadReading;
+        payload = PayloadQ.payloads[index];
+        commands(payload);
+
+        gateKey = GateSwi_enter(Bios.PayloadWriteGate);
+
+        payloadnext = index + 1;
+        if (payloadnext >= PAYLOAD_SIZE){
+            payloadnext = 0;
+        }
+        PayloadQ.payloadReading = payloadnext;
+        GateSwi_leave(Bios.PayloadWriteGate, gateKey);
+    }
+}
+
+void TSKUart0Read()
+{
+    char input;
+
+    for(;;) //ever
+    {
+        UART_read(Glo.uart0, &input, 1);
+        UART_write(Glo.uart0, &input, 1);
+
+        MsgAddByte(input);
+    }
+}
+
+void TSKUart7Read()
+{
+    char inp[BUFFER_SIZE];
+    int_fast32_t len;
+
+    for(;;){
+        len = UART_read(Glo.uart7, inp, sizeof(inp));
+
+        if(len > 0 && len < BUFFER_SIZE){
+            inp[len - 1] = 0;
+            UARTWriteProtected("UART7: ");
+            UARTWriteProtected(inp);
+            UARTWriteProtected("\r\n");
+
+            AddPayload(inp);
+        }
+    }
+}
