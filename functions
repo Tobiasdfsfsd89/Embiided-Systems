@@ -1,0 +1,1228 @@
+/*
+ * p100.c
+ */
+
+#include <stdio.h>
+#include "class.h"
+
+void about()
+{
+    char response[BUFFER_SIZE];
+    sprintf(response,"Name: Toby Erua\r\nAssignment: 8\r\nVersion: 12.8\r\nDate %s/Time %s\r\n ", __DATE__, __TIME__);
+    UARTWriteProtected(response);
+
+    }
+
+
+
+void callbacks(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    char response[BUFFER_SIZE];
+    int32_t i, index = -1, count = 0;
+    char payload[BUFFER_SIZE];
+
+    if (token == NULL){
+        index = -1;
+    }
+    else{
+        if(isdigit(*token) == 0 && *token != '-'){
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            CBError++;
+            return;//error
+        }
+        index = atoi(token);
+    }
+    if(index < 0 || index >= CALLBACK_SIZE){
+        strcpy(response,"-------------------------List of Callbacks-------------------------\r\n");
+        UARTWriteProtected(response);
+
+        for(i=0; i < CALLBACK_SIZE; i++){
+            sprintf(response, "CALLBACK %i C:%i %s\r\n", i, CB[i].count, CB[i].payload);
+            UARTWriteProtected(response);
+        }
+        return;
+    }
+
+    token = MsgGetNextStr(token,false);
+    if(token == NULL){
+        sprintf(response, "CALLBACK %i C:%i %s\r\n", index, CB[index].count, CB[index].payload);
+        UARTWriteProtected(response);
+        return;
+    }
+    else{
+        if(*token == 'c'){
+            count = 0;
+            strcpy(payload, "");
+            goto ADDCB;
+        }
+        if(isdigit(*token) == 0 && *token != '-'){
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            CBError++;
+            return;//error
+        }
+        count = atoi(token);
+    }
+
+    token = MsgGetNextStr(token,false);
+    if(token){
+        strcpy(payload, token);
+    }
+    else{
+        strcpy(payload,CB[index].payload);
+    }
+
+ADDCB:
+    AddCallback(index, count, payload);
+    sprintf(response, "CALLBACK %i C:%i %s\r\n", index, CB[index].count, CB[index].payload);
+    UARTWriteProtected(response);
+}
+
+void error() {
+    char response[BUFFER_SIZE];
+    sprintf(response, "\r\nBuffer Overflow: %d\r\nunknownCommands: %d\r\nInvalid GPIO commands: %d\r\nInvalid callback commands: %d\r\nInvalid timer period: %d\r\n", bufferoverload, unknownCommands, GPIOerror, CBError, TimerError);
+    UARTWriteProtected(response);
+}
+
+
+void gpio(char *input)
+{
+    char *token;
+    token = MsgGetNextStr(input,false);
+    char response[BUFFER_SIZE];
+    int digit;
+
+    if (isdigit((int)token[0]) && token != NULL){
+        digit = token[0] - '0';
+        token = MsgGetNextStr(token,false);
+        if (digit <= 7){
+            if(token[0] == 'r'){
+                sprintf(response,"GPIO %x reads %x\r\n", digit, GPIO_read(digit));
+                UARTWriteProtected(response);
+                return;
+            }
+            else if (token[0] == 'w'){
+                token = MsgGetNextStr(token,false);
+
+                GPIO_write(digit,token[0] - '0');
+                sprintf(response,"GPIO %x wrote %x\r\n", digit, GPIO_read(digit));
+                UARTWriteProtected(response);
+
+                return;
+            }
+            else if (token[0] == 't'){
+                GPIO_toggle(digit);
+                sprintf(response,"GPIO %x toggled to %x\r\n", digit, GPIO_read(digit));
+                UARTWriteProtected(response);
+                return;
+            }
+        }
+        else{
+            sprintf(response, "This is a GPIO Error\r\n");
+            UARTWriteProtected(response);
+            GPIOerror++;
+            return;
+        }
+
+    }
+    strcpy(response, "------------------------------GPIO Info----------------------------------\r\n");
+    UARTWriteProtected(response);
+
+    sprintf(response,"0: LED0:         %x\r\n", GPIO_read(0));
+    UARTWriteProtected(response);
+
+    sprintf(response,"1: LED1:         %x\r\n", GPIO_read(1));
+    UARTWriteProtected(response);
+
+    sprintf(response,"2: LED2:         %x\r\n", GPIO_read(2));
+    UARTWriteProtected(response);
+
+    sprintf(response,"3: LED3:         %x\r\n", GPIO_read(3));
+    UARTWriteProtected(response);
+
+    sprintf(response,"4: Switch 1:     %x\r\n", GPIO_read(4));
+    UARTWriteProtected(response);
+
+    sprintf(response,"5: Switch 2:     %x\r\n", GPIO_read(5));
+    UARTWriteProtected(response);
+
+    sprintf(response,"6: PK5:          %x\r\n", GPIO_read(6));
+    UARTWriteProtected(response);
+
+    sprintf(response,"7: PD4:          %x\r\n", GPIO_read(7));
+    UARTWriteProtected(response);
+}
+
+
+
+void Ifstatement(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    char response[BUFFER_SIZE];
+    int32_t val1, val2, index, cond, i;
+    char valT[BUFFER_SIZE] = "";
+    char* valF = strchr(input, ':');
+    char* testVal;
+
+    if(token == NULL){
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    if(*token == '#'){                                                                    // loc is a number
+            token++;
+            if(isdigit(*token)){
+                val1 = atoi(token);
+            }
+            else{
+                sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+                UARTWriteProtected(response);
+                Ifailure++;
+                return;//error
+            }
+        }
+        else if(isdigit(*token)){                                                         // loc is a register
+            index = atoi(token);
+            if(index > 0 && index < REGISTER_SIZE){
+                val1 = reg[index];
+            }
+            else{
+                sprintf(response, "%i is Out of Range\r\n", index);
+                UARTWriteProtected(response);
+                out_of_range++;
+                return;//error
+            }
+        }
+        else{                                                                           // loc is not valid
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            Ifailure++;
+            return;//error
+        }
+
+    token = MsgGetNextStr(token,false);
+
+    if (token == NULL){
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    switch(token[0]){
+    case '<':
+        cond = 0;
+        break;
+    case '=':
+        cond = 1;
+        break;
+    case '>':
+        cond = 2;
+        break;
+    default:
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    token = MsgGetNextStr(token,false);
+
+    if(token == NULL){
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    if(*token == '#'){                                                                    // loc is a number
+            token++;
+            if(isdigit(*token)){
+                val2 = atoi(token);
+            }
+            else{
+                sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+                UARTWriteProtected(response);
+                Ifailure++;
+                return;//error
+            }
+        }
+        else if(isdigit(*token)){                                                         // loc is a register
+            index = atoi(token);
+            if(index > 0 && index < REGISTER_SIZE){
+                val2 = reg[index];
+            }
+            else{
+                sprintf(response, "%i is Out of Range\r\n", index);
+                UARTWriteProtected(response);
+                out_of_range++;
+                return;//error
+            }
+        }
+        else{                                                                           // loc is not valid
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            Ifailure++;
+            return;//error
+        }
+
+    token = MsgGetNextStr(token,false);
+
+    if (token[0] != '?'){
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    token = MsgGetNextStr(token,false);
+
+    if (valF == NULL){
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    testVal = MsgGetNextStr(valF,false);
+
+    if(testVal == NULL){
+        valF++;
+        strcpy(valF, " ");
+    }
+    else{
+        valF = MsgGetNextStr(valF,false);
+    }
+
+    if(token[0] == ':'){                                                                     // true doesnt return
+        strcpy(valT," ");
+    }
+    else if(token == NULL) {                                                              // missing rest of command
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+    else{
+        i = 0;
+        strcpy(valT, token);
+        while(token[0] != ':'){
+            token++;
+            i++;
+        }
+        valT[i] = '\0';
+    }
+
+    switch(cond){
+    case 0://<
+        if(val1 < val2){
+            strcpy(response,valT);
+        }
+        else{
+            strcpy(response,valF);
+        }
+        break;
+    case 1://=
+        if(val1 == val2){
+            strcpy(response,valT);
+        }
+        else{
+            strcpy(response,valF);
+        }
+        break;
+    case 2://>
+        if(val1 > val2){
+            strcpy(response,valT);
+        }
+        else{
+            strcpy(response,valF);
+         }
+        break;
+    default:
+        sprintf(response, "Command is incomplete, type -help if for info\r\n");
+        UARTWriteProtected(response);
+        Ifailure++;
+        return;//error
+    }
+
+    if(response[0] != ' '){
+        AddPayload(response);
+    }
+}
+
+void memr(char *memrvals) {
+    char *ptr;
+    char response[BUFFER_SIZE];
+    uintptr_t memorig = strtoul(memrvals, &ptr, 16);
+    // uint32_t address = 0xFFFFFFF0 & memorig;
+    if ((memorig >= 0xFFFFD && memorig < 0x20000000) || (memorig >= 0x2003FFFD && memorig < 0x40000000) ||
+        (memorig >= 0x44055000)) {
+
+        strcpy(response, "\r\nInvalid Address Range\r\n");
+        UARTWriteProtected(response);
+    }
+    else
+    {
+        uint32_t value = *(uint32_t *)memorig;
+        sprintf(response, "\r\nAddress: %#010x, Value: %#010x\r\n", memorig, value);
+        UARTWriteProtected(response);
+    }
+}
+
+
+
+void Print(char *input){
+
+    char *token;
+    token = MsgGetNextStr(input,true);
+
+    if (token != NULL){
+        UARTWriteProtected(token);
+        UART_write(Glo.uart0,"\r\n",2);
+    }
+}
+
+void registers(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    int32_t i, index = -1, index1, index2, val1, val2;
+    char response[BUFFER_SIZE];
+    int32_t ftn;
+
+    if (token == NULL){
+        index = -1;
+    }
+    else{
+        if(isdigit(*token) == 0 && *token != '-'){
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            unknownCommands++;
+            return;//error
+        }
+        index = atoi(token);
+    }
+    if(index < 0 || index >= REGISTER_SIZE){
+        strcpy(response,"-------------------------List of Registers-------------------------\r\n");
+        UARTWriteProtected(response);
+
+        for(i=0; i < REGISTER_SIZE; i++){
+            sprintf(response, "REGISTER %i %11d (0x%08x)\r\n", i, reg[i], reg[i]);
+            UARTWriteProtected(response);
+        }
+        return;
+    }
+
+    token = MsgGetNextStr(token,false);
+
+    if(token != NULL){
+        switch(token[0]){
+        case 'r':
+            ftn = FTN_READ;
+            break;
+        case 'w':
+        case '=':
+            ftn = FTN_WRITE;
+            break;
+        case 'i':
+            ftn = FTN_INC;
+            break;
+        case 'd':
+            ftn = FTN_DEC;
+            break;
+        case 'a':
+        case '+':
+            ftn = FTN_ADD;
+            break;
+        case 's':
+        case '-':
+            ftn = FTN_SUB;
+            break;
+        case 'n':
+            ftn = FTN_NOT;
+            break;
+        case '&':
+            ftn = FTN_AND;
+            break;
+        case '|':
+            ftn = FTN_IOR;
+            break;
+        case '^':
+            ftn = FTN_XOR;
+            break;
+        case '*':
+            ftn = FTN_MUL;
+            break;
+        case '/':
+            ftn = FTN_DIV;
+            break;
+        case '%':
+            ftn = FTN_REM;
+            break;
+        case '>':
+            ftn = FTN_MAX;
+            break;
+        case '<':
+            ftn = FTN_MIN;
+            break;
+        case 'x':
+            ftn = FTN_XCHG;
+            break;
+        case '_':
+            ftn = FTN_NEG;
+            break;
+        case 'c':
+            ftn = FTN_COPY;
+            break;
+        default:
+            ftn = atoi(token);
+            break;
+        }
+    }
+    else{
+        strcpy(response,"-------------------------List of Registers-------------------------\r\n");
+        UARTWriteProtected(response);
+
+        sprintf(response, "REGISTER %i %11d (0x%08x)\r\n", index, reg[index], reg[index]);
+        UARTWriteProtected(response);
+        return;
+    }
+
+    token = MsgGetNextStr(token,false);
+
+    if(token == NULL){
+        switch(ftn){
+        case FTN_READ:
+            goto CR_LF;
+        case FTN_INC:
+            reg[index]++;
+            goto CR_LF;
+        case FTN_DEC:
+            reg[index]--;
+            goto CR_LF;
+        default:
+            sprintf(response, "%i is not a Valid Digit\r\n", ftn);
+            UARTWriteProtected(response);
+            RegError++;
+            return;//error
+        }
+    }
+
+    if(*token == '#'){
+        token++;
+        if(isdigit(*token)){
+            val1 = atoi(token);
+        }
+        else{
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            RegError++;
+            return;//error
+        }
+    }
+    else if(isdigit(*token)){
+        index1 = atoi(token);
+        if(index1 > 0 && index1 < REGISTER_SIZE){
+            val1 = reg[index1];
+        }
+        else{
+            sprintf(response, "%i is Out of Range\r\n", index1);
+            UARTWriteProtected(response);
+            out_of_range++;
+            return;//error
+        }
+    }
+    else{
+        sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+        UARTWriteProtected(response);
+        RegError++;
+        return;//error
+    }
+
+    token = MsgGetNextStr(token,false);
+
+    if (token == NULL){
+        switch(ftn){
+        case FTN_WRITE:
+            reg[index] = val1;
+            goto CR_LF;
+        case FTN_NOT:
+            reg[index] = ~val1;
+            goto CR_LF;
+        case FTN_INC:
+            reg[index] = val1 + 1;
+            goto CR_LF;
+        case FTN_DEC:
+            reg[index] = val1 - 1;
+            goto CR_LF;
+        case FTN_NEG:
+            reg[index] = -val1;
+            goto CR_LF;
+        case FTN_COPY:
+            reg[index] = val1;
+            goto CR_LF;
+        default:
+            sprintf(response, "%i is not a Valid Digit\r\n", ftn);
+            UARTWriteProtected(response);
+            RegError++;
+            return;//error
+        }
+    }
+
+    if(*token == '#'){
+        token++;
+        if(isdigit(*token)){
+            val2 = atoi(token);
+        }
+        else{
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            RegError++;
+            return;//error
+        }
+    }
+    else if(isdigit(*token)){
+        index2 = atoi(token);
+        if(index2 > 0 && index2 < REGISTER_SIZE){
+            val2 = reg[index2];
+        }
+        else{
+            sprintf(response, "%i is Out of Range\r\n", index2);
+            UARTWriteProtected(response);
+            out_of_range++;
+            return;//error
+        }
+    }
+    else{
+        sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+        UARTWriteProtected(response);
+        RegError++;
+        return;//error
+    }
+
+    switch(ftn){
+    case FTN_ADD:
+        reg[index] = val1 + val2;
+        goto CR_LF;
+    case FTN_SUB:
+        reg[index] = val1 - val2;
+        goto CR_LF;
+    case FTN_AND:
+        reg[index] = val1 & val2;
+        goto CR_LF;
+    case FTN_IOR:
+        reg[index] = val1 | val2;
+        goto CR_LF;
+    case FTN_XOR:
+        reg[index] = val1 ^ val2;
+        goto CR_LF;
+    case FTN_MUL:
+        reg[index] = val1 * val2;
+        goto CR_LF;
+    case FTN_DIV:
+        if(val2 == 0){
+            if (val1 >= 0){
+                reg[index] = 0x7FFFFFFF;
+            }
+            else{
+                reg[index] = 0x80000000;
+            }
+        }
+        else{
+            reg[index] = val1 / val2;
+        }
+        goto CR_LF;
+    case FTN_REM:
+        if(val2 == 0){
+            reg[index] = val1;
+        }
+        else{
+            reg[index] = val1 % val2;
+        }
+        goto CR_LF;
+    case FTN_MAX:
+        reg[index] = (val1 > val2) ? val1 : val2;
+        goto CR_LF;
+    case FTN_MIN:
+        reg[index] = (val1 < val2) ? val1 : val2;
+        goto CR_LF;
+    case FTN_XCHG:
+        val1 = reg[index];
+        reg[index] = reg[index1];
+        reg[index1] = val1;
+        goto CR_LF;
+    default:
+        sprintf(response, "%i is not a Valid Digit\r\n", ftn);
+        UARTWriteProtected(response);
+        RegError++;
+        return;//error
+    }
+
+CR_LF:
+    sprintf(response, "REG %i %11d (0x%08x)\r\n", index, reg[index], reg[index]);
+    UARTWriteProtected(response);
+}
+
+void Rem(char *inp, size_t inp_size, char *buffer){
+    memset(ipn, 0, inp_size);
+    return;
+}
+
+void Script(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    int32_t i, index= -1;
+    char response[BUFFER_SIZE];
+
+    if (token == NULL){
+            index = -1;
+    }
+    else{
+        if(isdigit(*token) == 0 && *token != '-'){
+        sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+        UARTWriteProtected(response);
+        SCRError++;
+        return;//error
+        }
+        index = atoi(token);
+    }
+    if(index < 0 || index >= SCRIPT_SIZE){
+        strcpy(response,"-------------------------List of Scripts-------------------------\r\n");
+        UARTWriteProtected(response);
+
+        for(i=0; i < SCRIPT_SIZE; i++){
+            sprintf(response, "SCRIPT %i %s\r\n", i, scripts[i]);
+            UARTWriteProtected(response);
+        }
+        return;
+    }
+
+    token = MsgGetNextStr(token,false);
+
+    if (*token == 'w'){
+        token = MsgGetNextStr(token,false);
+
+        if (token != NULL){
+            AddScript(index, token);
+        }
+        else{
+            AddScript(index, "");
+        }
+        sprintf(response, "SCRIPT %i %s\r\n", index, scripts[index]);
+        UARTWriteProtected(response);
+    }
+    else if (*token == 'r' || token == NULL){
+        sprintf(response, "SCRIPT %i %s\r\n", index, scripts[index]);
+        UARTWriteProtected(response);
+    }
+    else if(*token == 'x'){
+        while(scripts[index][0] != 0 && index < SCRIPT_SIZE){
+            if(Semaphore_getCount(Bios.PayloadSem) > SCRIPT_LIMIT){
+                sprintf(response, "-script %d", index);
+                AddPayload(response);
+                return;
+            }
+            else if(!strncmp(scripts[index],"-if",3)){
+                AddPayload(scripts[index]);
+                return;
+            }
+            else{
+                AddPayload(scripts[index]);
+                index++;
+            }
+        }
+    }
+    else{
+        sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+        UARTWriteProtected(response);
+        out_of_range++;
+        return;//error
+    }
+
+}
+
+void timer(char *input) {
+    unsigned timerval;
+    char response[BUFFER_SIZE];
+    if (sscanf(input, "-timer %u", &timerval) == 1) {
+        // Check if the timer value is within the valid range
+        if (timerval >= 150 && timerval < 4294967294) {
+            Timer_close(Glo.timer0);
+            Timer0Params.period = timerval;
+            Glo.timer0 = Timer_open(CONFIG_TIMER_0, &Timer0Params);
+            Timer_start(Glo.timer0);
+
+            snprintf(response, sizeof(response), "\r\nThis is the timer period: %u\r\n", Timer0Params.period);
+            UARTWriteProtected(response);
+        } else {
+            strcpy(response, "\r\nTimer period out of range\r\n");
+            UARTWriteProtected(response);
+            TimerError++;
+        }
+    } else {
+        snprintf(response, sizeof(response), "\r\nTimer period: %u ", Timer0Params.period);
+        UARTWriteProtected(response);
+    }
+
+    strcpy(response, "\r\n-------------------------\r\n");
+    UARTWriteProtected(response);
+}
+
+//void Stream(char *input){
+//    char *token;
+//    token = MsgGetNextStr(input,false);
+//    uint32_t intent;
+//    char response[BUFFER_SIZE];
+//
+//    if (token == NULL){
+//        switch(adcBufCtrl.converting){
+//        case 0:
+//            intent = 1;
+//            break;
+//        case 1:
+//            intent = 2;
+//            break;
+//        case 2:
+//            intent = 0;
+//            break;
+//        }
+//    }
+//    else{
+//        switch(*token){
+//        case '0':
+//        case 'f':
+//            intent = 0;
+//            break;
+//        case '1':
+//        case 't':
+//            intent = 1;
+//            break;
+//        case '2':
+//            intent = 2;
+//            break;
+//        }
+//    }
+//    if(intent == adcBufCtrl.converting){
+//        return;
+//    }
+//
+//    if(intent == 0){                                                            // intent to turn off
+//        if (adcBufCtrl.converting == 2){
+//            if (ADCBuf_convertCancel(Glo.adcBuf) != ADCBuf_STATUS_SUCCESS){
+//                sprintf(response, "Command is incomplete, type -help if for info\r\n");
+//                UARTWriteProtected(response);
+//                Ifailure++;
+//                return;//error
+//            }
+//        }
+//        adcBufCtrl.converting = 0;
+//        if(LUTCtrl.lutDelta > 0){
+//            Sine("-sine 0");
+//        }
+//        callbacks("-callback 0 c");
+//        adcBufCtrl.RX_Completed = NULL;
+//        txBufCtrl.completed = NULL;
+//        txBufCtrl.index = -1;
+//    }
+//    else if (intent == 1 && adcBufCtrl.converting == 0){                    // intent to start
+//        gpio("-gpio 6 w 0");
+//        gpio("-gpio 7 w 1");
+//        callbacks("-callback 0 -1 -audio");
+//        timer("timer 125");
+//        tickers("-ticker 15 50 0 0 -stream 2");
+//        adcBufCtrl.converting = 1;
+//        ClearAudioBuffer();
+//    }
+//    else if (intent == 2 && adcBufCtrl.converting == 1){
+//        if (ADCBuf_convert(Glo.adcBuf, &adcBufCtrl.conversion, 1) != ADCBuf_STATUS_SUCCESS){
+//            sprintf(response, "Command is incomplete, type -help if for info\r\n");
+//            UARTWriteProtected(response);
+//            Ifailure++;
+//            return;//error
+//        }
+//        else{
+//            adcBufCtrl.converting = 2;
+//            adcBufCtrl.RX_Completed = NULL;
+//            txBufCtrl.completed = NULL;
+//            txBufCtrl.index = -1;
+//            txBufCtrl.delay = DATA_DELAY;
+//            txBufCtrl.correction = 0;
+//        }
+//    }
+//}
+
+void Sine(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    uint32_t freq, lowerIndex, upperIndex, roundAnswer;
+    double lowerWeight, upperWeight, answer;
+    SPI_Transaction spiTransaction;
+    bool transfer;
+    char response[BUFFER_SIZE];
+
+    if(Timer0Period != 125){
+        timer("-timer 125");
+    }
+
+    if(token != NULL && token[0] != 0 && Timer0Period > 0){
+        if(isdigit(*token) == 0){
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            out_of_range++;
+            return;//error
+        }
+        freq = atoi(token);
+        LUTCtrl.lutDelta = (double) freq * (double) LUT_SIZE * (double) Timer0Period / 1000000.;
+    }
+    if(LUTCtrl.lutDelta >= LUT_SIZE / 2){
+        LUTCtrl.lutDelta = 0.;
+        AddPayload("-print Nyquist violation");
+        callbacks("-callback 0 c");
+        timer("-timer 0");
+        return;
+    }
+    if(LUTCtrl.lutDelta <= 0.){
+        LUTCtrl.lutDelta = 0.;
+        callbacks("-callback 0 c");
+        timer("-timer 0");
+        AddPayload("-print Timer 0 is off");
+        return;
+        }
+    if(token != NULL){
+        gpio("-gpio 6 w 0");
+        callbacks("-callback 0 -1 -sine");
+        return;
+    }
+    lowerIndex = (uint32_t) LUTCtrl.lutPosition;
+    upperIndex = lowerIndex + 1;
+    upperWeight = LUTCtrl.lutPosition - (double) lowerIndex;
+    lowerWeight = 1. - upperWeight;
+
+    answer = (double) LUTCtrl.sinlut[lowerIndex] * lowerWeight + (double) LUTCtrl.sinlut[upperIndex] * upperWeight;
+    roundAnswer = (uint32_t) answer;
+
+    spiTransaction.count = 1;
+    spiTransaction.txBuf = (void *) &roundAnswer;
+    spiTransaction.rxBuf = (void *) NULL;
+
+    transfer = SPI_transfer(Glo.spi3, &spiTransaction);
+    if(!transfer){
+        while(1);
+    }
+
+    LUTCtrl.lutPosition += LUTCtrl.lutDelta;
+    while(LUTCtrl.lutPosition >= (double) LUT_SIZE){
+        LUTCtrl.lutPosition -= (double) LUT_SIZE;
+    }
+}
+
+void tickers(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    int32_t i, index= -1, delay = 0, period = 0, count = 0;
+    char payload[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+
+    if (token == NULL){
+            index = -1;
+    }
+    else{
+        if(isdigit(*token) == 0 && *token != '-'){
+            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            UARTWriteProtected(response);
+            TICError++;
+            return;//error
+            }
+        index = atoi(token);
+    }
+    if(index < 0 || index >= TICKER_SIZE){
+            strcpy(response,"-------------------------Ticker Info-------------------------\r\n");
+            UARTWriteProtected(response);
+
+            for(i = 0; i < TICKER_SIZE; i++){
+                sprintf(response,"TICKER %i D: %i P: %i C: %i %s\r\n", i, tic[i].delay, tic[i].period, tic[i].count, tic[i].payload);
+                UARTWriteProtected(response);
+            }
+            return;
+        }
+
+
+    token = MsgGetNextStr(token,false);
+    if(token == NULL){
+        sprintf(response, "TICKER %i D: %i P: %i C: %i %s\r\n", index, tic[index].delay, tic[index].period, tic[index].count, tic[index].payload);
+        UARTWriteProtected(response);
+        return;
+    }
+    else{
+        if(*token == 'c'){
+            count = 0;
+            delay = 0;
+            period = 100;
+            strcpy(payload, "");
+            goto ADDTICKER;
+            }
+            if(isdigit(*token) == 0 && *token != '-' && token != NULL){
+                sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+                UARTWriteProtected(response);
+                TICError++;
+                return;//error
+            }
+            if(token){
+                delay = atoi(token);
+            }
+            else{
+                delay = 0;
+            }
+    }
+
+    token = MsgGetNextStr(token,false);
+    if(isdigit(*token) == 0 && *token != '-' && token != NULL){
+        sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+        UARTWriteProtected(response);
+        TICError++;
+        return;//error
+        }
+    if(token){
+        period = atoi(token);
+    }
+    else{
+        period = 0;
+    }
+
+    token = MsgGetNextStr(token,false);
+    if(isdigit(*token) == 0 && *token != '-' && token != NULL){
+        sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+        UARTWriteProtected(response);
+        TICError++;
+        return;//error
+        }
+    if(token){
+        count = atoi(token);
+    }
+    else{
+        count = 0;
+    }
+    token = MsgGetNextStr(token,false);
+    if(token){
+        strcpy(payload, token);
+    }
+    else{
+        strcpy(payload,tic[index].payload);
+    }
+
+    ADDTICKER:
+        AddTicker(index, delay, period, count, payload);
+        sprintf(response, "TICKER %i D: %i P: %i C: %i %s\r\n", index, tic[index].delay, tic[index].period, tic[index].count, tic[index].payload);
+        UARTWriteProtected(response);
+}
+
+
+
+void uart(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
+    char response[BUFFER_SIZE];
+
+    if(token != NULL){
+        strcpy(response,token);
+        strcat(response,"\n");
+        UART_write(Glo.uart7, response, strlen(response));
+    }
+}
+
+
+
+void help(char *input) {
+    char *token;
+    token = MsgGetNextStr(input, false);
+    char response[BUFFER_SIZE];
+
+    if (token == NULL) {
+        strcpy(response, "----------------List of Commands--------------------\r\n");
+        UARTWriteProtected(response);
+
+        strcpy(response, "-about\r\n-help\r\n-callback\r\n-error\r\n-gpio\r\n");
+        UARTWriteProtected(response);
+
+        strcpy(response, "-if\r\n-memr\r\n-print\r\n-reg\r\n-rem\r\n");
+        UARTWriteProtected(response);
+
+        strcpy(response, "-sine\r\n-ticker\r\n-timer\r\n-uart\r\n");
+        UARTWriteProtected(response);
+    } else {
+        strcpy(response, "-----------------Help Info-------------------------\r\n");
+        UARTWriteProtected(response);
+
+        if (strstr(token, "about")) {
+            strcpy(response, "-about: displays info about the system\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "callback")) {
+            strcpy(response, "-callback: displays current callbacks, counts, and functions\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Usage: callback <index> <count> <payload>\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "error")) {
+            strcpy(response, "-error: displays current count of each error type\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "gpio")) {
+            strcpy(response, "-gpio: reads all outputs of the gpio pins\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Usage: -gpio <pin> <action> <val>\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "help")) {
+            strcpy(response, "-help: displays a list of commands\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "reg")) {
+            strcpy(response, "-reg: displays a list of registers\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "rem")) {
+            strcpy(response, "-rem: remark lets you make a comment in scripts\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "script")) {
+            strcpy(response, "-script: displays a list of scripts\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "sine")) {
+            strcpy(response, "-sine: plays a sine wave tone with a specified frequency\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Usage: frequency must be between 1 and 3999\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "ticker")) {
+            strcpy(response, "-ticker: displays a list of tickers\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "timer")) {
+            strcpy(response, "-timer: displays the current period\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "if")) {
+            strcpy(response, "-if Val1 Cond Val2 ? True : False - compares value 1 and value 2\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "uart")) {
+            strcpy(response, "-uart: sends a command through UART7\r\n");
+            UARTWriteProtected(response);
+        }
+        else {
+            strcpy(response, "No command found, type -help for a list of commands\r\n");
+            UARTWriteProtected(response);
+        }
+    }
+}
+
+void commands(char *inp) {
+    char response[BUFFER_SIZE];
+
+    if (strcmp(inp, "-about") == 0) {
+        about();
+    }
+    else if (strncmp(inp, "-help", 5) == 0) {
+        help(inp);
+    }
+    else if (strncmp(inp, "-print", 6) == 0) {
+        Print(inp);
+    }
+    else if (strncmp(inp, "-memr", 5) == 0) { // Fixed condition length
+        memr(inp);
+    }
+    else if (strcmp(inp, "-error") == 0) {
+        error();
+    }
+    else if (strncmp(inp, "-gpio", 5) == 0) {
+        gpio(inp);
+    }
+    else if (strncmp(inp, "-timer", 6) == 0) {
+        timer(inp);
+    }
+    else if (strncmp(inp, "-callback", 9) == 0) {
+        callbacks(inp);
+    }
+    else if (strncmp(inp, "-ticker", 7) == 0) {
+        tickers(inp);
+    }
+    else if (strncmp(inp, "-reg", 4) == 0) {
+        registers(inp);
+    }
+    else if (strncmp(inp, "-script", 7) == 0) {
+        Script(inp);
+    }
+    else if (strncmp(inp, "-if", 3) == 0) {
+        Ifstatement(inp);
+    }
+    else if(strncmp(inp, "-uart", 5) == 0){
+        uart(inp);
+    }
+    else if(strncmp(inp, "-sine", 5) == 0){
+        Sine(inp);
+    }
+    else {
+        sprintf(response, "%.16s is Not a Valid Command\r\n", inp);
+        UARTWriteProtected(response);
+        unknownCommands++;
+    }
+}
+
+void MsgAddByte(char input){
+
+
+    if (input == '\x7f'){               //checks for backspace
+            if (Glo.inp[0] != '\0'){
+                Glo.inp[strlen(Glo.inp)-1] = '\0';
+            }
+        }
+        else if (input != '\r' && input != '\n'){            //checks for not enter
+            appendStr(Glo.inp, input);
+        }
+        else                                //checks for enter
+        {
+            UART_write(Glo.uart0, "\r\n", 2);//end line
+            AddPayload(Glo.inp);
+            Glo.inp[0] = '\0';          //clear buffer
+        }
+}
+
+char* MsgGetNextStr(char *input, bool allwhites)
+{
+    char* firstSpace = strchr(input, ' ');
+
+    if (allwhites){
+        if(firstSpace != NULL){
+            return (char*)(firstSpace + 1);
+        }
+        char response[BUFFER_SIZE] = "No Message Found\r\n";
+        UARTWriteProtected(response);
+        unknownCommands++;
+        return (NULL);
+    }
+    else{
+        if(firstSpace != NULL){
+            while (*firstSpace == ' '){
+                firstSpace++;
+            }
+            if (*firstSpace != '\0'){
+                return (firstSpace);
+            }
+        }
+        return (NULL);
+    }
+}
+
+void UARTWriteProtected(char *input)
+{
+    int len = strlen(input);
+    UART_write(Glo.uart0,input,len);
+}
