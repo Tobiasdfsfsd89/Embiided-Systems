@@ -39,7 +39,7 @@
 
 extern void *mainThread(void *arg0);
 
-#define BUFFER_SIZE 120
+#define BUFFER_SIZE 300
 #define PAYLOAD_SIZE 32
 #define CALLBACK_SIZE 3
 #define TICKER_SIZE 16
@@ -47,15 +47,12 @@ extern void *mainThread(void *arg0);
 #define SCRIPT_SIZE 64
 #define SCRIPT_LIMIT 5
 #define LUT_SIZE 256
-#define DATABLOCK_SIZE 128
-#define DATA_DELAY 8
-#define DEFAULT_NET_PORT 1000
+
 
 
 UART_Params uartParams;
 Timer_Params Timer0Params;
 SPI_Params spiParams;
-ADCBuf_Params adcBufParams;
 
 
 int bufferoverload;
@@ -74,20 +71,15 @@ typedef struct _BiosList{
     Task_Handle UART0ReadTask;
     Task_Handle PayloadTask;
     Task_Handle UART7ReadTask;
-    Task_Handle ADCStreamTask;
     Task_Handle FirstTask;
     GateSwi_Handle PayloadWriteGate;
     GateSwi_Handle CallbackGate;
-    GateSwi_Handle UDPOutWriteGate;
     GateSwi_Handle TickerGate;
     Semaphore_Handle PayloadSem;
-    Semaphore_Handle ADCBufSem;
-    Semaphore_Handle UDPOutSem;
     Swi_Handle Timer0SWI;
     Swi_Handle Timer1SWI;
     Swi_Handle SW1SWI;
     Swi_Handle SW2SWI;
-    Swi_Handle ADCSWI;
 
 } BiosList;
 
@@ -121,7 +113,6 @@ typedef struct _Globals{
     Timer_Handle timer0;
     Timer_Handle timer1;
     SPI_Handle spi3;
-    ADCBuf_Handle adcBuf;
 } Globals;
 
 Globals Glo;
@@ -148,62 +139,37 @@ typedef struct _LutCtrl{
 
 LutCtrl LUTCtrl;
 
-typedef struct _adcBufControl{
-    ADCBuf_Conversion conversion;
-    uint32_t converting;
-    uint16_t RX_Ping[DATABLOCK_SIZE];
-    uint16_t RX_Pong[DATABLOCK_SIZE];
-    uint16_t *RX_Completed;
-    uint32_t callback_count;
-} ADCBufControl;
-
-ADCBufControl adcBufCtrl;
-
-typedef struct _txBufCtrl{
-    uint16_t *completed;
-    int32_t index;
-    uint32_t delay;
-    int32_t correction;
-    uint16_t ping[DATABLOCK_SIZE];
-    uint16_t pong[DATABLOCK_SIZE];
-} TXBufControl;
-
-TXBufControl txBufCtrl;
 
 
-// reg
+
+
 
 int32_t reg[REGISTER_SIZE];
 
-#define FTN_READ 1
-#define FTN_WRITE 2
-#define FTN_MOV 3
-#define FTN_INC 4
-#define FTN_DEC 5
-#define FTN_XCHG 6
-#define FTN_ADD 7
-#define FTN_SUB 8
-#define FTN_NOT 9
-#define FTN_AND 10
-#define FTN_IOR 11
-#define FTN_XOR 12
-#define FTN_MAX 13
-#define FTN_MIN 14
-#define FTN_MUL 15
-#define FTN_DIV 16
-#define FTN_REM 17
-#define FTN_NEG 18
-#define FTN_CLEAR 19
 
+#define FTN_MOV 1
+#define FTN_INC 2
+#define FTN_DEC 3
+#define FTN_XCHG 4
+#define FTN_ADD 5
+#define FTN_SUB 6
+#define FTN_NOT 7
+#define FTN_AND 8
+#define FTN_IOR 9
+#define FTN_XOR 10
+#define FTN_MAX 11
+#define FTN_MIN 12
+#define FTN_MUL 13
+#define FTN_DIV 14
+#define FTN_REM 15
+#define FTN_NEG 16
+#define FTN_CLEAR 17
 
 // tasks.c -----------------------------------------------------
-void TSKAAAFIRST();
 void TSKPayload();
 void TSKUart0Read();
-void TSKADCStream();
+void TSKUart7Read();
 
-void *UDPxmitFxn(void *arg0);
-void *recUDPFxn(void *arg0);
 // infrastructure ----------------------------------------------
 void AddCallback(int32_t index, int32_t count, char *payload);
 
@@ -214,8 +180,6 @@ void AddScript(int32_t index, char *input);
 void appendStr(char *input, char c);
 
 void AddTicker(int32_t index, int32_t delay, int32_t period, int32_t count, char *payload);
-
-void ClearAudioBuffer();
 
 void Driver_init();
 
