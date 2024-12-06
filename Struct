@@ -90,17 +90,7 @@ void AddTicker(int32_t index, int32_t delay, int32_t period, int32_t count, char
     }
 }
 
-void ClearAudioBuffer(){
-    int32_t i;
 
-    for (i = 0; i < DATABLOCK_SIZE; i++){
-        adcBufCtrl.RX_Ping[i] = 0;
-        adcBufCtrl.RX_Pong[i] = 0;
-
-        txBufCtrl.ping[i] = 0;
-        txBufCtrl.pong[i] = 0;
-    }
-}
 
 void Driver_init(){
     GPIO_init();
@@ -182,19 +172,7 @@ void Driver_init(){
         while(1);
     }
 
-    ADCBuf_Params_init(&adcBufParams);
 
-    adcBufParams.returnMode = ADCBuf_RETURN_MODE_CALLBACK;
-    adcBufParams.recurrenceMode = ADCBuf_RECURRENCE_MODE_CONTINUOUS;
-
-    adcBufParams.callbackFxn = adcBufCallback;
-    adcBufParams.samplingFrequency = 8000;
-
-    Glo.adcBuf = ADCBuf_open(CONFIG_ADCBUF_0, &adcBufParams);
-
-    if (Glo.adcBuf == NULL){
-        while(1);
-    }
 }
 
 void Global_init(){
@@ -229,7 +207,7 @@ void Global_init(){
         }
 
     for(i=1; i < REGISTER_SIZE; i++){
-        reg[i] = reg[i-1] + 100;
+        reg[i] = reg[i-1] + 10;
     }
 
     LUTCtrl.lutDelta = 0;
@@ -264,4 +242,3 @@ void Global_init(){
     strcpy(scripts[20], "-gpio 2 t");
     strcpy(scripts[21], "-gpio 3 t");
 }
-
