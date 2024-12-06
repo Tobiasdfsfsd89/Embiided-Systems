@@ -7,17 +7,7 @@
 #include "class.h"
 #include <stdio.h>
 
-void adcBufCallback(ADCBuf_Handle handle, ADCBuf_Conversion *conversion, void *buffer, uint32_t channel, int_fast16_t status){
-    if(buffer != adcBufCtrl.RX_Ping && buffer != adcBufCtrl.RX_Pong){
-        Swi_post(Bios.ADCSWI);
-        return;
-    }
 
-    adcBufCtrl.RX_Completed = buffer;
-    adcBufCtrl.callback_count++;
-
-    Semaphore_post(Bios.ADCBufSem);
-}
 
 void SWIADC(UArg arg0, UArg arg1){
     return;//error
