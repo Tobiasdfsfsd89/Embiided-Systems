@@ -8,7 +8,7 @@
 void about()
 {
     char response[BUFFER_SIZE];
-    sprintf(response,"Name: Toby Erua\r\nAssignment: 8\r\nVersion: 12.8\r\nDate %s/Time %s\r\n ", __DATE__, __TIME__);
+    sprintf(response,"Name: Toby Erua\r\nAssignment: 8\r\nVersion: 12.8\r\nDate: %s\r\nTime %s\r\n", __DATE__, __TIME__);
     UARTWriteProtected(response);
 
     }
@@ -27,7 +27,7 @@ void callbacks(char *input){
     }
     else{
         if(isdigit(*token) == 0 && *token != '-'){
-            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            sprintf(response, "This is a callback error \r\n", token);
             UARTWriteProtected(response);
             CBError++;
             return;//error
@@ -58,7 +58,7 @@ void callbacks(char *input){
             goto ADDCB;
         }
         if(isdigit(*token) == 0 && *token != '-'){
-            sprintf(response, "%.16s is not a Valid Digit\r\n", token);
+            sprintf(response, "This is a callback error\r\n", token);
             UARTWriteProtected(response);
             CBError++;
             return;//error
@@ -82,7 +82,7 @@ ADDCB:
 
 void error() {
     char response[BUFFER_SIZE];
-    sprintf(response, "\r\nBuffer Overflow: %d\r\nunknownCommands: %d\r\nInvalid GPIO commands: %d\r\nInvalid callback commands: %d\r\nInvalid timer period: %d\r\n", bufferoverload, unknownCommands, GPIOerror, CBError, TimerError);
+    sprintf(response, "\r\nBuffer Overflow: %d\r\nunknownCommands: %d\r\nInvalid GPIO commands: %d\r\nInvalid callback commands: %d\r\nInvalid timer period: %d\r\nTickers error: %d\r\nRegister Error: %d\r\nScripts Error: %d\r\nDigit Out of Range: %d\r\nConditions Error: %d\r\n", bufferoverload, unknownCommands, GPIOerror, CBError, TimerError, TICError, RegError, SCRError, Ifailure, out_of_range);
     UARTWriteProtected(response);
 }
 
@@ -368,7 +368,7 @@ void memr(char *memrvals) {
     else
     {
         uint32_t value = *(uint32_t *)memorig;
-        sprintf(response, "\r\nAddress: %#010x, Value: %#010x\r\n", memorig, value);
+        sprintf(response, "\r\nAddress: %#010x, Value: %#010x", memorig, value);
         UARTWriteProtected(response);
     }
 }
@@ -420,13 +420,6 @@ void registers(char *input){
 
     if(token != NULL){
         switch(token[0]){
-        case 'r':
-            ftn = FTN_READ;
-            break;
-        case 'w':
-        case '=':
-            ftn = FTN_WRITE;
-            break;
         case 'i':
             ftn = FTN_INC;
             break;
@@ -474,8 +467,11 @@ void registers(char *input){
         case '_':
             ftn = FTN_NEG;
             break;
+        case 'm':
+            ftn = FTN_MOV;
+            break;
         case 'c':
-            ftn = FTN_COPY;
+            ftn = FTN_CLEAR;
             break;
         default:
             ftn = atoi(token);
@@ -495,7 +491,8 @@ void registers(char *input){
 
     if(token == NULL){
         switch(ftn){
-        case FTN_READ:
+        case FTN_CLEAR:
+            reg[index] = 0;
             goto CR_LF;
         case FTN_INC:
             reg[index]++;
@@ -546,9 +543,6 @@ void registers(char *input){
 
     if (token == NULL){
         switch(ftn){
-        case FTN_WRITE:
-            reg[index] = val1;
-            goto CR_LF;
         case FTN_NOT:
             reg[index] = ~val1;
             goto CR_LF;
@@ -561,7 +555,7 @@ void registers(char *input){
         case FTN_NEG:
             reg[index] = -val1;
             goto CR_LF;
-        case FTN_COPY:
+        case FTN_MOV:
             reg[index] = val1;
             goto CR_LF;
         default:
@@ -666,10 +660,14 @@ CR_LF:
     UARTWriteProtected(response);
 }
 
-void Rem(char *inp, size_t inp_size, char *buffer){
-    memset(ipn, 0, inp_size);
-    return;
+void Rem(char *input ) {
+
 }
+
+
+
+
+
 
 void Script(char *input){
     char *token;
@@ -725,7 +723,7 @@ void Script(char *input){
                 AddPayload(response);
                 return;
             }
-            else if(!strncmp(scripts[index],"-if",3)){
+            else if(strncmp(scripts[index],"-if",3) == 0){
                 AddPayload(scripts[index]);
                 return;
             }
@@ -734,6 +732,14 @@ void Script(char *input){
                 index++;
             }
         }
+    }
+    else if (*token == 'c') {
+        for (i = 0; i < SCRIPT_SIZE; i++) {
+            scripts[i][0] = '\0';  // Clear all scripts
+        }
+        strcpy(response, "All scripts cleared.\r\n");
+        UARTWriteProtected(response);
+        return;
     }
     else{
         sprintf(response, "%.16s is not a Valid Digit\r\n", token);
@@ -744,115 +750,33 @@ void Script(char *input){
 
 }
 
-void timer(char *input) {
-    unsigned timerval;
+void timer(char *input){
+    char *token;
+    token = MsgGetNextStr(input,false);
     char response[BUFFER_SIZE];
-    if (sscanf(input, "-timer %u", &timerval) == 1) {
-        // Check if the timer value is within the valid range
-        if (timerval >= 150 && timerval < 4294967294) {
-            Timer_close(Glo.timer0);
-            Timer0Params.period = timerval;
-            Glo.timer0 = Timer_open(CONFIG_TIMER_0, &Timer0Params);
-            Timer_start(Glo.timer0);
 
-            snprintf(response, sizeof(response), "\r\nThis is the timer period: %u\r\n", Timer0Params.period);
-            UARTWriteProtected(response);
-        } else {
-            strcpy(response, "\r\nTimer period out of range\r\n");
-            UARTWriteProtected(response);
-            TimerError++;
-        }
-    } else {
-        snprintf(response, sizeof(response), "\r\nTimer period: %u ", Timer0Params.period);
+    if (token == NULL){
+        strcpy(response,"-------------------------Timer Info-------------------------\r\n");
+        UARTWriteProtected(response);
+
+        sprintf(response,"TIMER 0 PERIOD: %i\r\n",Timer0Period);
         UARTWriteProtected(response);
     }
+    else if(isdigit(*token)){
+        Timer0Period = atoi(token);
 
-    strcpy(response, "\r\n-------------------------\r\n");
-    UARTWriteProtected(response);
+        sprintf(response,"TIMER 0 PERIOD: %i\r\n",Timer0Period);
+        UARTWriteProtected(response);
+        Timer_setPeriod(Glo.timer0,Timer_PERIOD_US,Timer0Period);
+    }
+    else{
+        sprintf(response, "%.16s is Not a Valid Period\r\n", token);
+        UARTWriteProtected(response);
+        TimerError++;
+    }
 }
 
-//void Stream(char *input){
-//    char *token;
-//    token = MsgGetNextStr(input,false);
-//    uint32_t intent;
-//    char response[BUFFER_SIZE];
-//
-//    if (token == NULL){
-//        switch(adcBufCtrl.converting){
-//        case 0:
-//            intent = 1;
-//            break;
-//        case 1:
-//            intent = 2;
-//            break;
-//        case 2:
-//            intent = 0;
-//            break;
-//        }
-//    }
-//    else{
-//        switch(*token){
-//        case '0':
-//        case 'f':
-//            intent = 0;
-//            break;
-//        case '1':
-//        case 't':
-//            intent = 1;
-//            break;
-//        case '2':
-//            intent = 2;
-//            break;
-//        }
-//    }
-//    if(intent == adcBufCtrl.converting){
-//        return;
-//    }
-//
-//    if(intent == 0){                                                            // intent to turn off
-//        if (adcBufCtrl.converting == 2){
-//            if (ADCBuf_convertCancel(Glo.adcBuf) != ADCBuf_STATUS_SUCCESS){
-//                sprintf(response, "Command is incomplete, type -help if for info\r\n");
-//                UARTWriteProtected(response);
-//                Ifailure++;
-//                return;//error
-//            }
-//        }
-//        adcBufCtrl.converting = 0;
-//        if(LUTCtrl.lutDelta > 0){
-//            Sine("-sine 0");
-//        }
-//        callbacks("-callback 0 c");
-//        adcBufCtrl.RX_Completed = NULL;
-//        txBufCtrl.completed = NULL;
-//        txBufCtrl.index = -1;
-//    }
-//    else if (intent == 1 && adcBufCtrl.converting == 0){                    // intent to start
-//        gpio("-gpio 6 w 0");
-//        gpio("-gpio 7 w 1");
-//        callbacks("-callback 0 -1 -audio");
-//        timer("timer 125");
-//        tickers("-ticker 15 50 0 0 -stream 2");
-//        adcBufCtrl.converting = 1;
-//        ClearAudioBuffer();
-//    }
-//    else if (intent == 2 && adcBufCtrl.converting == 1){
-//        if (ADCBuf_convert(Glo.adcBuf, &adcBufCtrl.conversion, 1) != ADCBuf_STATUS_SUCCESS){
-//            sprintf(response, "Command is incomplete, type -help if for info\r\n");
-//            UARTWriteProtected(response);
-//            Ifailure++;
-//            return;//error
-//        }
-//        else{
-//            adcBufCtrl.converting = 2;
-//            adcBufCtrl.RX_Completed = NULL;
-//            txBufCtrl.completed = NULL;
-//            txBufCtrl.index = -1;
-//            txBufCtrl.delay = DATA_DELAY;
-//            txBufCtrl.correction = 0;
-//        }
-//    }
-//}
+
 
 void Sine(char *input){
     char *token;
@@ -1072,7 +996,7 @@ void help(char *input) {
             UARTWriteProtected(response);
         }
         else if (strstr(token, "gpio")) {
-            strcpy(response, "-gpio: reads all outputs of the gpio pins\r\n");
+            strcpy(response, "-gpio: reads all outputs of the GPIO pins\r\n");
             UARTWriteProtected(response);
 
             strcpy(response, "Usage: -gpio <pin> <action> <val>\r\n");
@@ -1085,24 +1009,57 @@ void help(char *input) {
         else if (strstr(token, "reg")) {
             strcpy(response, "-reg: displays a list of registers\r\n");
             UARTWriteProtected(response);
+
+            strcpy(response, "Usage: -reg # OP val1 val2\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Operators: r (READ), w (WRITE), c (COPY), i (INCREMENT), d (DECREMENT)\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Additional Op: x (EXCHANGE), + (ADD), - (SUBTRACT), > (MAX), < (MIN)\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Other Op: * (MULTIPLY), / (DIVIDE), % (REMAINDER), _ (NEGATIVE)\r\n");
+            UARTWriteProtected(response);
         }
         else if (strstr(token, "rem")) {
-            strcpy(response, "-rem: remark lets you make a comment in scripts\r\n");
+            strcpy(response, "-rem: allows comments in scripts without executing code\r\n");
             UARTWriteProtected(response);
         }
         else if (strstr(token, "script")) {
             strcpy(response, "-script: displays a list of scripts\r\n");
             UARTWriteProtected(response);
-        }
-        else if (strstr(token, "sine")) {
-            strcpy(response, "-sine: plays a sine wave tone with a specified frequency\r\n");
+
+            strcpy(response, "-script # w command: write a command to script #\r\n");
             UARTWriteProtected(response);
 
-            strcpy(response, "Usage: frequency must be between 1 and 3999\r\n");
+            strcpy(response, "-script # x: runs script # and subsequent scripts until a blank\r\n");
+            UARTWriteProtected(response);
+        }
+        else if (strstr(token, "sine")) {
+            strcpy(response, "-sine #: plays a sine wave tone with frequency #\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Frequency must be between 1 and 3999\r\n");
             UARTWriteProtected(response);
         }
         else if (strstr(token, "ticker")) {
             strcpy(response, "-ticker: displays a list of tickers\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "-ticker 0-15: displays info about # ticker\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "-ticker # 0-inf: changes # ticker's delay\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "-ticker # D 0-inf: changes # ticker's period\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "-ticker # D P 0-inf: changes # ticker's count\r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "-ticker # D P C -command: sets # ticker's activation function\r\n");
             UARTWriteProtected(response);
         }
         else if (strstr(token, "timer")) {
@@ -1110,7 +1067,10 @@ void help(char *input) {
             UARTWriteProtected(response);
         }
         else if (strstr(token, "if")) {
-            strcpy(response, "-if Val1 Cond Val2 ? True : False - compares value 1 and value 2\r\n");
+            strcpy(response, "Usage: -if Val1 Cond Val2 ? True : False: \r\n");
+            UARTWriteProtected(response);
+
+            strcpy(response, "Conditions: >, <, =, shows the right condition\r\n");
             UARTWriteProtected(response);
         }
         else if (strstr(token, "uart")) {
@@ -1123,6 +1083,7 @@ void help(char *input) {
         }
     }
 }
+
 
 void commands(char *inp) {
     char response[BUFFER_SIZE];
@@ -1169,6 +1130,9 @@ void commands(char *inp) {
     else if(strncmp(inp, "-sine", 5) == 0){
         Sine(inp);
     }
+    else if(strncmp(inp, "-rem", 4) == 0){
+            Rem(inp);
+    }
     else {
         sprintf(response, "%.16s is Not a Valid Command\r\n", inp);
         UARTWriteProtected(response);
@@ -1179,20 +1143,28 @@ void commands(char *inp) {
 void MsgAddByte(char input){
 
 
-    if (input == '\x7f'){               //checks for backspace
+    if (input == '\x7f')
+    {               //checks for backspace
             if (Glo.inp[0] != '\0'){
                 Glo.inp[strlen(Glo.inp)-1] = '\0';
-            }
         }
-        else if (input != '\r' && input != '\n'){            //checks for not enter
-            appendStr(Glo.inp, input);
-        }
-        else                                //checks for enter
-        {
-            UART_write(Glo.uart0, "\r\n", 2);//end line
-            AddPayload(Glo.inp);
-            Glo.inp[0] = '\0';          //clear buffer
-        }
+     }
+    else if(input == '\x60')
+    {
+        UART_write(Glo.uart0, "Killswitch\r\n", 12);
+        Glo.inp[0] = '\0';
+        Global_init();
+    }
+
+    else if (input != '\r' && input != '\n'){            //checks for not enter
+        appendStr(Glo.inp, input);
+    }
+    else                                //checks for enter
+    {
+        UART_write(Glo.uart0, "\r\n", 2);//end line
+        AddPayload(Glo.inp);
+        Glo.inp[0] = '\0';          //clear buffer
+    }
 }
 
 char* MsgGetNextStr(char *input, bool allwhites)
